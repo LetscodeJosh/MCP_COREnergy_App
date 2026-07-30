@@ -1040,22 +1040,35 @@ class _QuickEntryInstitutionSheetState extends State<QuickEntryInstitutionSheet>
       _isSaving = true;
     });
 
-    final inst = Institution(
+    final apiService = Provider.of<ApiService>(context, listen: false);
+
+    final newEngage = COREnergyEngage(
       name: '',
       institutionName: _nameController.text.trim(),
-      regionName: _selectedRegion?.code,
-      provinceName: _selectedProvince?.code,
+      hospitalClinic: _nameController.text.trim(),
+      region: _selectedRegion?.code,
+      province: _selectedProvince?.code,
       cityMunicipality: _selectedCity?.code,
       streetAddress: _streetController.text.trim().isEmpty ? null : _streetController.text.trim(),
+      salesRep: apiService.loggedInEmail ?? 'jptan@profinsights.biz',
     );
 
     try {
-      final apiService = Provider.of<ApiService>(context, listen: false);
-      final created = await apiService.createInstitution(inst);
+      final createdEngage = await apiService.createCOREnergyEngage(newEngage);
+      
+      final createdInst = Institution(
+        name: createdEngage.name,
+        institutionName: createdEngage.hospitalClinic ?? createdEngage.institutionName ?? _nameController.text.trim(),
+        regionName: createdEngage.region,
+        provinceName: createdEngage.province,
+        cityMunicipality: createdEngage.cityMunicipality,
+        streetAddress: createdEngage.streetAddress,
+      );
+
       setState(() {
         _isSaving = false;
       });
-      widget.onSaved(created);
+      widget.onSaved(createdInst);
       Navigator.pop(context); // Close Quick Entry Sheet
     } catch (e) {
       setState(() {

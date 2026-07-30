@@ -174,91 +174,10 @@ class ApiService extends ChangeNotifier {
     notifyListeners();
     bool somethingSynced = false;
     try {
-      // 1. Sync pending institutions first
+      // Clean up legacy pending institution rows without posting to Institution DocType (reserved for HCP App)
       final pendingInstRows = await DbHelper.getPendingInstitutions();
       for (var instRow in pendingInstRows) {
-        final String tempInstId = instRow['temp_id'];
-        final Map<String, dynamic> instData = jsonDecode(instRow['data']);
-        
-        try {
-          final url = Uri.parse('$baseUrl/api/resource/Institution');
-          final payload = Map<String, dynamic>.from(instData);
-          payload.remove('name'); // ERPNext will generate the real INST-XXXXX code
-          
-          final response = await http.post(
-            url,
-            headers: _headers,
-            body: jsonEncode(payload),
-          ).timeout(const Duration(seconds: 10));
-          
-          String? realInstName;
-          
-          if (response.statusCode == 200 || response.statusCode == 201) {
-            final body = jsonDecode(response.body);
-            realInstName = body['data']['name'];
-          } else if (response.statusCode == 409 || 
-                     response.body.contains('already exists') || 
-                     response.body.contains('DuplicateEntryError')) {
-            // Already exists on server, let's search for its code using the institution_name
-            final searchUrl = Uri.parse(
-              '$baseUrl/api/resource/Institution?filters=[["institution_name","=","${instData['institution_name']}"]]'
-            );
-            final searchResponse = await http.get(searchUrl, headers: _headers).timeout(const Duration(seconds: 7));
-            if (searchResponse.statusCode == 200) {
-              final searchBody = jsonDecode(searchResponse.body);
-              final List<dynamic> searchData = searchBody['data'] ?? [];
-              if (searchData.isNotEmpty) {
-                realInstName = searchData[0]['name'];
-              }
-            }
-          }
-          
-          if (realInstName != null && realInstName.isNotEmpty) {
-            // Remove from pending institutions
-            await DbHelper.deletePendingInstitution(tempInstId);
-            somethingSynced = true;
-            
-            // Update local cache list in institutions_cache.json
-            final cache = await _readFromCache('institutions_cache.json');
-            if (cache != null) {
-              try {
-                final List<dynamic> cachedList = jsonDecode(cache);
-                for (int i = 0; i < cachedList.length; i++) {
-                  if (cachedList[i]['name'] == tempInstId) {
-                    cachedList[i]['name'] = realInstName;
-                  }
-                }
-                await _writeToCache('institutions_cache.json', jsonEncode(cachedList));
-              } catch (_) {}
-            }
-            
-            // Update all pending engagements in SQLite referring to this temporary ID
-            final pendingEngageRows = await DbHelper.getPendingEngagements();
-            for (var engRow in pendingEngageRows) {
-              final String engTempId = engRow['temp_id'];
-              final String engActionType = engRow['action_type'];
-              final Map<String, dynamic> engData = jsonDecode(engRow['data']);
-              
-              bool modified = false;
-              if (engData['name'] == tempInstId) {
-                engData['name'] = realInstName;
-                modified = true;
-              }
-              if (engData['institution_name'] == tempInstId) {
-                engData['institution_name'] = realInstName;
-                modified = true;
-              }
-              
-              if (modified) {
-                final updatedEng = COREnergyEngage.fromJson(engData);
-                await DbHelper.deletePendingEngagement(engTempId);
-                await DbHelper.insertPendingEngagement(updatedEng, engActionType);
-              }
-            }
-          }
-        } catch (e) {
-          print('Sync failed for pending institution $tempInstId: $e');
-        }
+        await DbHelper.deletePendingInstitution(instRow['temp_id']);
       }
 
       final pendingRows = await DbHelper.getPendingEngagements();
@@ -678,81 +597,28 @@ class ApiService extends ChangeNotifier {
     }
   }
 
-  /// Create a new Institution record online or save it offline if not online/fails
+  /// Create a new Institution entry (routed exclusively to COREnergy Engage Copy DocType for MCP COREnergy App)
   Future<Institution> createInstitution(Institution inst) async {
-    if (_isOffline) {
-      return await _saveInstitutionOffline(inst);
-    }
-    final url = Uri.parse('$baseUrl/api/resource/Institution');
-    final payload = inst.toJson();
-    payload.remove('name'); // ERPNext will generate the INST name series
-    
-    try {
-      final response = await http.post(
-        url,
-        headers: _headers,
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final body = jsonDecode(response.body);
-        final created = Institution.fromJson(body['data']);
-        
-        // Add to local cache list
-        final cache = await _readFromCache('institutions_cache.json');
-        List<dynamic> cachedList = [];
-        if (cache != null) {
-          try {
-            cachedList = jsonDecode(cache);
-          } catch (_) {}
-        }
-        cachedList.insert(0, created.toJson());
-        await _writeToCache('institutions_cache.json', jsonEncode(cachedList));
-        notifyListeners();
-        
-        return created;
-      } else {
-        throw Exception('Failed to create institution: ${response.body}');
-      }
-    } catch (e) {
-      print('Create institution online failed: $e. Falling back to offline queue...');
-      // If we failed online due to network issues, we fallback to offline
-      return await _saveInstitutionOffline(inst);
-    }
-  }
-
-  Future<Institution> _saveInstitutionOffline(Institution inst) async {
-    final tempId = 'INST-OFFLINE-${DateTime.now().millisecondsSinceEpoch}';
-    final offlineInst = Institution(
-      name: tempId,
+    final newEngage = COREnergyEngage(
+      name: '',
       institutionName: inst.institutionName,
-      regionName: inst.regionName,
-      provinceName: inst.provinceName,
+      hospitalClinic: inst.institutionName,
+      region: inst.regionName,
+      province: inst.provinceName,
       cityMunicipality: inst.cityMunicipality,
-      barangayName: inst.barangayName,
       streetAddress: inst.streetAddress,
+      salesRep: loggedInEmail ?? 'jptan@profinsights.biz',
     );
 
-    // Save to SQLite
-    try {
-      await DbHelper.insertPendingInstitution(offlineInst.toJson(), tempId);
-    } catch (e) {
-      print('Error saving pending institution to SQLite: $e');
-    }
-
-    // Append to local cache list so it's selectable in UI
-    final cache = await _readFromCache('institutions_cache.json');
-    List<dynamic> cachedList = [];
-    if (cache != null) {
-      try {
-        cachedList = jsonDecode(cache);
-      } catch (_) {}
-    }
-    cachedList.insert(0, offlineInst.toJson());
-    await _writeToCache('institutions_cache.json', jsonEncode(cachedList));
-    notifyListeners();
-
-    return offlineInst;
+    final created = await createCOREnergyEngage(newEngage);
+    return Institution(
+      name: created.name,
+      institutionName: created.hospitalClinic ?? created.institutionName ?? inst.institutionName,
+      regionName: created.region,
+      provinceName: created.province,
+      cityMunicipality: created.cityMunicipality,
+      streetAddress: created.streetAddress,
+    );
   }
 
   /// Retrieve list of COREnergy Engage logs

@@ -303,45 +303,7 @@ class _DoctorMasterlistScreenState extends State<DoctorMasterlistScreen> {
                   ],
                 ),
               ),
-              // Dynamic Program Selector Dropdown
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Consumer<ApiService>(
-                  builder: (context, api, child) {
-                    return DropdownButtonFormField<String>(
-                      dropdownColor: Colors.white,
-                      style: const TextStyle(color: Color(0xFF1C1C1E)),
-                      value: api.selectedProgram,
-                      decoration: const InputDecoration(
-                        labelText: 'Active Program',
-                        labelStyle: TextStyle(color: Color(0xFF0056B3), fontWeight: FontWeight.bold),
-                        prefixIcon: Icon(Icons.business_center, color: Color(0xFF0056B3)),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFFD1D1D6)),
-                          borderRadius: BorderRadius.all(Radius.circular(8)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF0056B3), width: 2),
-                          borderRadius: BorderRadius.all(Radius.circular(8)),
-                        ),
-                      ),
-                      items: api.availablePrograms.map((prog) {
-                        return DropdownMenuItem<String>(
-                          value: prog,
-                          child: Text(prog),
-                        );
-                      }).toList(),
-                      onChanged: (newProg) {
-                        if (newProg != null) {
-                          api.setProgram(newProg);
-                          _loadData();
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               // Navigation Items
               ListTile(
                 leading: const Icon(Icons.people_alt, color: Color(0xFF0056B3)),
@@ -370,6 +332,20 @@ class _DoctorMasterlistScreenState extends State<DoctorMasterlistScreen> {
                 },
               ),
               const Spacer(),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'MCP Version 1.5',
+                    style: TextStyle(
+                      color: Color(0xFF8E8E93),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
               const Divider(color: Color(0xFFD1D1D6)),
               ListTile(
                 leading: const Icon(Icons.logout, color: Color(0xFFFF3B30)),
