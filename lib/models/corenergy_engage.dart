@@ -110,6 +110,7 @@ class COREnergyEngage {
   final String? salesRep;
   final String? leadsSource;
   final String? leadsStatus;
+  final String? ownershipNationality;
   final String? creation;
   final String? modified;
 
@@ -130,6 +131,7 @@ class COREnergyEngage {
     this.salesRep,
     this.leadsSource,
     this.leadsStatus,
+    this.ownershipNationality,
     this.creation,
     this.modified,
     this.contacts = const [],
@@ -172,6 +174,7 @@ class COREnergyEngage {
       salesRep: json['sales_rep'],
       leadsSource: json['leads_source'],
       leadsStatus: json['leads_status'],
+      ownershipNationality: json['ownership_nationality'],
       creation: json['creation'],
       modified: json['modified'],
       contacts: parsedContacts,
@@ -198,6 +201,7 @@ class COREnergyEngage {
       if (salesRep != null) 'sales_rep': salesRep,
       if (leadsSource != null) 'leads_source': leadsSource,
       if (leadsStatus != null) 'leads_status': leadsStatus,
+      if (ownershipNationality != null) 'ownership_nationality': ownershipNationality,
       // Serialize child tables to multiple common naming keys for safety
       'table_ugpp': contacts.map((c) => c.toJson()).toList(),
       'contacts': contacts.map((c) => c.toJson()).toList(),

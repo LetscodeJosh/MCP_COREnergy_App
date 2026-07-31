@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -37,6 +38,7 @@ class _ListScreenState extends State<ListScreen> {
   List<COREnergyEngage> _filteredEngageLogs = [];
 
   final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
 
   // COREnergy Engage filters
   String? _selectedRegion;
@@ -122,6 +124,7 @@ class _ListScreenState extends State<ListScreen> {
   
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -825,9 +828,12 @@ class _ListScreenState extends State<ListScreen> {
                     child: TextField(
                       controller: _searchController,
                       onChanged: (val) {
-                        setState(() {
-                          _searchQuery = val;
-                          _applyFilters();
+                        _searchQuery = val;
+                        _debounce?.cancel();
+                        _debounce = Timer(const Duration(milliseconds: 300), () {
+                          if (mounted) {
+                            _applyFilters();
+                          }
                         });
                       },
                       style: const TextStyle(color: Color(0xFF1C1C1E), fontSize: 14),
@@ -1816,7 +1822,7 @@ class _ListScreenState extends State<ListScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+
             // Navigation Items
             ListTile(
               leading: const Icon(Icons.assignment, color: Color(0xFF0056B3)),
@@ -1827,18 +1833,16 @@ class _ListScreenState extends State<ListScreen> {
               onTap: () => Navigator.pop(context),
             ),
             const Spacer(),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'MCP Version 1.5',
-                  style: TextStyle(
-                    color: Color(0xFF8E8E93),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+              child: Text(
+                'MCP Version 1.5',
+                style: TextStyle(
+                  color: const Color(0xFF8E8E93),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                 ),
+                textAlign: TextAlign.center,
               ),
             ),
             const Divider(color: Color(0xFFD1D1D6)),

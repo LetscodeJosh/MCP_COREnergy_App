@@ -31,6 +31,14 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
   
   String? _selectedCompany; // Holds Institution Link ID (e.g. INST-00001)
   String? _selectedSalesRep;
+  String? _selectedOwnershipNationality;
+
+  // Ownership Nationality options matching ERPNext selector field
+  final List<String> _ownershipNationalityOptions = [
+    'Filipino',
+    'Foreign',
+    'Other',
+  ];
   
   final _hospitalClinicController = TextEditingController();
   final _regionController = TextEditingController();
@@ -153,6 +161,7 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
 
       _streetAddressController.text = widget.engage!.streetAddress ?? '';
       _selectedSalesRep = widget.engage!.salesRep ?? apiService.loggedInEmail;
+      _selectedOwnershipNationality = widget.engage!.ownershipNationality;
       
       // Load initial flat details from widget.engage
       _contactsList.addAll(widget.engage!.contacts);
@@ -182,6 +191,10 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
         _contactsList.addAll(fullEngage.contacts);
         _visitsList.addAll(fullEngage.visits);
         _actionItemsList.addAll(fullEngage.actionItems);
+        // Update ownership nationality from full details if available
+        if (fullEngage.ownershipNationality != null && fullEngage.ownershipNationality!.isNotEmpty) {
+          _selectedOwnershipNationality = fullEngage.ownershipNationality;
+        }
         _isLoadingDetails = false;
       });
     } catch (e) {
@@ -355,6 +368,7 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
       cityMunicipality: _cityMunicipalityCode,
       streetAddress: _streetAddressController.text.trim().isEmpty ? null : _streetAddressController.text.trim(),
       salesRep: _selectedSalesRep,
+      ownershipNationality: _selectedOwnershipNationality,
       contacts: _contactsList,
       visits: _visitsList,
       actionItems: _actionItemsList,
@@ -787,6 +801,20 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
             });
           },
           validator: (val) => val == null ? 'Please select a Sales Rep' : null,
+        ),
+        const SizedBox(height: 16),
+
+        const Text('OWNERSHIP NATIONALITY', style: TextStyle(color: Color(0xFF636366), fontSize: 11, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        _buildDropdownField<String>(
+          value: _selectedOwnershipNationality,
+          hint: 'Select Nationality...',
+          items: _ownershipNationalityOptions,
+          onChanged: (val) {
+            setState(() {
+              _selectedOwnershipNationality = val;
+            });
+          },
         ),
         const SizedBox(height: 24),
 

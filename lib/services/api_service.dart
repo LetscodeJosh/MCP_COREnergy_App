@@ -533,7 +533,7 @@ class ApiService extends ChangeNotifier {
       return [];
     }
     final url = Uri.parse(
-      '$baseUrl/api/resource/COREnergy%20Engage%20Copy?fields=["name","institution_name","region_name","province_name","city_municipality","barangay_name","street_address","sales_rep","leads_source","leads_status","creation","modified"]&limit=5000',
+      '$baseUrl/api/resource/Successful%20COREnergy%20Engagement?fields=["name","institution_name","region_name","province_name","city_municipality","barangay_name","street_address","sales_rep","leads_source","leads_status","creation","modified"]&limit=5000',
     );
     try {
       final response = await http.get(url, headers: _headers);
@@ -628,7 +628,7 @@ class ApiService extends ChangeNotifier {
 
     if (!_isOffline) {
       final url = Uri.parse(
-        '$baseUrl/api/resource/COREnergy%20Engage%20Copy?fields=["name","institution_name","region_name","province_name","city_municipality","barangay_name","street_address","sales_rep","leads_source","leads_status","creation","modified"]&limit=5000',
+        '$baseUrl/api/resource/COREnergy%20Engage%20Copy?fields=["name","institution_name","region_name","province_name","city_municipality","barangay_name","street_address","sales_rep","leads_source","leads_status","ownership_nationality","creation","modified"]&limit=5000',
       );
       try {
         final response = await http.get(url, headers: _headers).timeout(const Duration(seconds: 7));
