@@ -700,9 +700,8 @@ function initMap() {
         mapInstance = L.map('map-container').setView([14.3129, 121.1009], 12);
         
         // Standard sleek dark theme tile layer mapping
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-            subdomains: 'abcd',
+        L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            attribution: '&copy; Google Maps',
             maxZoom: 20
         }).addTo(mapInstance);
     }
@@ -810,18 +809,36 @@ async function erpNextLogin(usr, pwd) {
 
 async function fetchLiveData() {
     try {
-        const fetchEngUrl = `${appState.apiBaseUrl}/api/resource/COREnergy%20Engage%20Copy?fields=["*"]&limit=100`;
-        const fetchInstUrl = `${appState.apiBaseUrl}/api/resource/Institution?fields=["name","institution_name"]&limit=200`;
+        const fields = encodeURIComponent('["name","company","latitude","longitude","location_accuracy","picture","sales_rep","contact","last_name","position_or_role","email_address","contact_number","date_and_time_of_sales_appointment","decision_maker_or_responsible_person_not_available","reason_for_unsuccessful_call","unsuccessful_call","creation","modified"]');
+        const fetchSuccUrl = `${appState.apiBaseUrl}/api/resource/Successful%20COREnergy%20Engagement?fields=${fields}&limit=500`;
+        const fetchUnsuccUrl = `${appState.apiBaseUrl}/api/resource/Unsuccessful%20COREnergy%20Engagement?fields=${fields}&limit=500`;
+        const fetchInstUrl = `${appState.apiBaseUrl}/api/resource/Institution?fields=["name","institution_name"]&limit=500`;
         
-        const [engRes, instRes] = await Promise.all([
-            fetch(fetchEngUrl, { credentials: 'include' }).then(r => r.json()),
-            fetch(fetchInstUrl, { credentials: 'include' }).then(r => r.json())
+        const [succRes, unsuccRes, instRes] = await Promise.all([
+            fetch(fetchSuccUrl, { credentials: 'include' }).then(r => r.ok ? r.json() : { data: [] }).catch(() => ({ data: [] })),
+            fetch(fetchUnsuccUrl, { credentials: 'include' }).then(r => r.ok ? r.json() : { data: [] }).catch(() => ({ data: [] })),
+            fetch(fetchInstUrl, { credentials: 'include' }).then(r => r.ok ? r.json() : { data: [] }).catch(() => ({ data: [] }))
         ]);
         
-        if (engRes.data) appState.engagements = engRes.data;
-        if (instRes.data) appState.institutions = instRes.data;
+        const combined = [];
+        if (succRes.data && Array.isArray(succRes.data)) {
+            succRes.data.forEach(d => { d.unsuccessful_call = 0; combined.push(d); });
+        }
+        if (unsuccRes.data && Array.isArray(unsuccRes.data)) {
+            unsuccRes.data.forEach(d => { d.unsuccessful_call = 1; combined.push(d); });
+        }
+        
+        if (combined.length > 0) {
+            combined.sort((a, b) => (b.creation || '').localeCompare(a.creation || ''));
+            appState.engagements = combined;
+        }
+        if (instRes.data && Array.isArray(instRes.data) && instRes.data.length > 0) {
+            appState.institutions = instRes.data;
+        }
         
         populateDropdowns();
+        renderRecordsList();
+        if (appState.currentScreen === 'map') initMap();
         showToast('Live ERPNext databases synced!', 'success');
     } catch (err) {
         showToast('Failed to pull live databases. Suspended offline.', 'error');
@@ -830,7 +847,15 @@ async function fetchLiveData() {
 }
 
 async function createLiveRecord(payload) {
-    const url = `${appState.apiBaseUrl}/api/resource/COREnergy%20Engage%20Copy`;
+    const isUnsucc = payload.unsuccessful_call === 1 || payload.unsuccessful_call === true;
+    const docType = isUnsucc ? 'Unsuccessful%20COREnergy%20Engagement' : 'Successful%20COREnergy%20Engagement';
+    
+    // Ensure latitude and longitude are valid strings for ERPNext
+    if (!payload.latitude) payload.latitude = '0.0';
+    if (!payload.longitude) payload.longitude = '0.0';
+    if (!isUnsucc) delete payload.reason_for_unsuccessful_call;
+
+    const url = `${appState.apiBaseUrl}/api/resource/${docType}`;
     const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -840,23 +865,35 @@ async function createLiveRecord(payload) {
         body: JSON.stringify(payload),
         credentials: 'include'
     });
-    if (!response.ok) throw new Error('Create call failed');
+    if (!response.ok) {
+        const errText = await response.text();
+        console.error('Create call failed:', errText);
+        throw new Error('Create call failed: ' + errText);
+    }
     return response.json();
 }
 
 async function updateLiveRecord(name, payload) {
-    const url = `${appState.apiBaseUrl}/api/resource/COREnergy%20Engage%20Copy/${encodeURIComponent(name)}`;
-    const response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        },
-        body: JSON.stringify(payload),
-        credentials: 'include'
-    });
-    if (!response.ok) throw new Error('Update call failed');
-    return response.json();
+    const isUnsucc = payload.unsuccessful_call === 1 || payload.unsuccessful_call === true;
+    const primaryDt = isUnsucc ? 'Unsuccessful%20COREnergy%20Engagement' : 'Successful%20COREnergy%20Engagement';
+    const fallbackDt = isUnsucc ? 'Successful%20COREnergy%20Engagement' : 'Unsuccessful%20COREnergy%20Engagement';
+
+    for (const dt of [primaryDt, fallbackDt, 'COREnergy%20Engage%20Copy']) {
+        try {
+            const url = `${appState.apiBaseUrl}/api/resource/${dt}/${encodeURIComponent(name)}`;
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(payload),
+                credentials: 'include'
+            });
+            if (response.ok) return response.json();
+        } catch (_) {}
+    }
+    throw new Error('Update call failed on all DocTypes');
 }
 
 // Signature Pad Canvas drawing logic

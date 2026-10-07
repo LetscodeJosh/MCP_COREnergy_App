@@ -36,7 +36,8 @@ class BiometricService {
         localizedReason: 'Authenticate to log in to PIMS MCP',
         options: const AuthenticationOptions(
           stickyAuth: true,
-          biometricOnly: true,
+          biometricOnly: false,
+          useErrorDialogs: true,
         ),
       );
     } on PlatformException catch (e) {

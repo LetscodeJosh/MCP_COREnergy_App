@@ -45,6 +45,7 @@ class _DetailScreenState extends State<DetailScreen> {
   
   String? _latitude;
   String? _longitude;
+  double _locationAccuracy = 0.0;
   
   File? _imageFile;
   final _picker = ImagePicker();
@@ -53,12 +54,14 @@ class _DetailScreenState extends State<DetailScreen> {
   String _selectedCountryCode = '+63';
 
   final List<String> _unsuccessfulReasons = [
-    'Company moved to different address',
     'Prior appointment or letter needed',
-    'Decision maker not available',
-    'Closed / No longer in operations',
-    'Refused to entertain',
-    'Other'
+    'Contact not available',
+    'Company no longer operational',
+    'Company moved to different address',
+    'Call - Invalid or Cannot be reached',
+    'Call - Wrong number',
+    'Call - 3 Attempt, no answer',
+    'Call - Declined or Rejected',
   ];
 
   @override
@@ -145,44 +148,115 @@ class _DetailScreenState extends State<DetailScreen> {
     });
 
     try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Location Services Disabled'),
+              content: const Text('Please enable GPS / Location Services on your device.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Geolocator.openLocationSettings();
+                  },
+                  child: const Text('Open Settings'),
+                ),
+              ],
+            ),
+          );
+        }
+        setState(() {
+          _isLocating = false;
+        });
+        return;
+      }
+
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          throw Exception('Location permission denied');
-        }
       }
       
-      if (permission == LocationPermission.deniedForever) {
-        throw Exception('Location permissions are permanently denied');
+      if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Location permission is required to capture engagement coordinates.'),
+              backgroundColor: const Color(0xFFFF3B30),
+              action: SnackBarAction(
+                label: 'Settings',
+                textColor: Colors.white,
+                onPressed: () => Geolocator.openAppSettings(),
+              ),
+            ),
+          );
+        }
+        setState(() {
+          _isLocating = false;
+        });
+        return;
       }
 
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      );
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.best,
+          timeLimit: const Duration(seconds: 12),
+        );
+      } catch (_) {
+        try {
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 8),
+          );
+        } catch (_) {
+          position = await Geolocator.getLastKnownPosition();
+        }
+      }
+
+      if (position == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not acquire GPS fix. Please ensure you have location enabled outdoors or near a window.'),
+              backgroundColor: Color(0xFFFF3B30),
+            ),
+          );
+        }
+        setState(() {
+          _isLocating = false;
+        });
+        return;
+      }
 
       setState(() {
-        _latitude = position.latitude.toStringAsFixed(6);
+        _latitude = position!.latitude.toStringAsFixed(6);
         _longitude = position.longitude.toStringAsFixed(6);
+        _locationAccuracy = position.accuracy;
         _isLocating = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('GPS coordinates saved successfully.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('GPS coordinates saved accurately (±${_locationAccuracy.toStringAsFixed(1)}m).'),
+            backgroundColor: const Color(0xFF34C759),
+          ),
+        );
+      }
     } catch (e) {
       setState(() {
-        // Fallback to random test environment coords close to Laguna
-        final offsetLat = (DateTime.now().millisecond / 1000 - 0.5) * 0.05;
-        final offsetLng = (DateTime.now().microsecond / 1000000 - 0.5) * 0.05;
-        _latitude = (14.3129 + offsetLat).toStringAsFixed(6);
-        _longitude = (121.1009 + offsetLng).toStringAsFixed(6);
         _isLocating = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('GPS failure ($e). Seeding mockup location.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('GPS error: $e')),
+        );
+      }
     }
   }
 
@@ -232,6 +306,7 @@ class _DetailScreenState extends State<DetailScreen> {
       decisionMakerOrResponsiblePersonNotAvailable: _decisionMakerNotAvailable,
       latitude: _latitude,
       longitude: _longitude,
+      locationAccuracy: _locationAccuracy,
       picture: _imageFile != null ? '/private/files/${_imageFile!.path.split('/').last}' : widget.engagement?.picture,
     );
 

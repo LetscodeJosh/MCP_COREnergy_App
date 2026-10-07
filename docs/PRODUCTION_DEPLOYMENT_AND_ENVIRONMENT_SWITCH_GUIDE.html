@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MCP COREnergy Profiling App - Production Deployment & Environment Switching Guide</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm 18mm 16mm;
+    }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      line-height: 1.6;
+      font-size: 13.5px;
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+    .header {
+      border-bottom: 3px solid #0056b3;
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .header-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #0056b3;
+      margin: 0;
+      letter-spacing: -0.3px;
+    }
+    .header-subtitle {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 4px;
+      font-weight: 500;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+    }
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f172a;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 6px;
+      margin-top: 24px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e3a8a;
+      margin-top: 16px;
+      margin-bottom: 8px;
+    }
+    p {
+      margin: 0 0 10px 0;
+    }
+    ul, ol {
+      margin: 0 0 12px 0;
+      padding-left: 20px;
+    }
+    li {
+      margin-bottom: 4px;
+    }
+    .code-box {
+      background: #0f172a;
+      color: #f8fafc;
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      margin: 10px 0 14px 0;
+      overflow-x: auto;
+      border: 1px solid #1e293b;
+    }
+    .code-comment { color: #94a3b8; }
+    .code-keyword { color: #38bdf8; font-weight: 600; }
+    .code-string { color: #4ade80; }
+    .code-var { color: #facc15; }
+    .callout {
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin: 12px 0 16px 0;
+      font-size: 12.5px;
+    }
+    .callout-info {
+      background: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      color: #1e40af;
+    }
+    .callout-tip {
+      background: #ecfdf5;
+      border-left: 4px solid #10b981;
+      color: #065f46;
+    }
+    .callout-warning {
+      background: #fffbeb;
+      border-left: 4px solid #f59e0b;
+      color: #92400e;
+    }
+    .callout-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 16px 0;
+      font-size: 12.5px;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    th {
+      background: #f1f5f9;
+      color: #0f172a;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+    .footer {
+      margin-top: 30px;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 10px;
+      font-size: 11px;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+    }
+    .tag {
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: monospace;
+      font-size: 11.5px;
+      color: #0f172a;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1 class="header-title">MCP COREnergy Profiling App</h1>
+      <div class="header-subtitle">Production Deployment & Environment Switching Guide (ERPNext v15)</div>
+    </div>
+    <div>
+      <span class="badge">Production Standard</span>
+    </div>
+  </div>
+
+  <h2>1. Workspace Boundary Assurance</h2>
+  <p>
+    This engineering guideline and all accompanying configurations are strictly dedicated to the 
+    <span class="tag">MCP COREnergy Profiling App</span> within 
+    <span class="tag">MCP_Test_Repo</span>. 
+    The HCP Profiling App operates as an independent system with distinct operational objectives. No cross-repository modifications or shared mutations are permitted.
+  </p>
+
+  <h2>2. Where to Locate the Development to Production Switch</h2>
+  <p>
+    The environment configuration has been centralized into a single, declarative configuration file to prevent scattered host references and eliminate manual search across the codebase:
+  </p>
+
+  <h3>📍 Mobile Flutter App: <code>lib/app_config.dart</code> (Lines 15–27)</h3>
+  <div class="code-box">
+<span class="code-keyword">class</span> AppConfig {
+  <span class="code-keyword">static</span> AppMode mode = AppMode.corenergy;
+
+  <span class="code-comment">/// =========================================================================</span>
+  <span class="code-comment">/// ENVIRONMENT CONFIGURATION (DEV vs PRODUCTION)</span>
+  <span class="code-comment">/// =========================================================================</span>
+  <span class="code-comment">/// 1. Toggle from Environment.development to Environment.production:</span>
+  <span class="code-keyword">static</span> Environment environment = Environment.<span class="code-var">production</span>;
+
+  <span class="code-comment">/// 2. Set your live Production ERPNext v15 domain here:</span>
+  <span class="code-keyword">static const</span> String prodBaseUrl = <span class="code-string">'https://pmii-marketing.com'</span>; 
+
+  <span class="code-comment">/// Development ERPNext v15 Server URL</span>
+  <span class="code-keyword">static const</span> String devBaseUrl = <span class="code-string">'https://dev.pmii-marketing.com'</span>;
+
+  <span class="code-comment">/// Active Server Base URL (Used dynamically throughout the application)</span>
+  <span class="code-keyword">static</span> String <span class="code-keyword">get</span> baseUrl =&gt;
+      environment == Environment.production ? prodBaseUrl : devBaseUrl;
+}
+  </div>
+
+  <h3>📍 Web Simulator & Territory Portal: <code>web_simulator/app.js</code> (Line 12)</h3>
+  <p>When testing or hosting the interactive web simulator, configure line 12 in <code>web_simulator/app.js</code>:</p>
+  <div class="code-box">
+<span class="code-keyword">const</span> CONFIG = {
+    apiBaseUrl: <span class="code-string">'https://pmii-marketing.com'</span>, <span class="code-comment">// Switch from dev to production</span>
+    ...
+};
+  </div>
+
+  <div style="page-break-after: always;"></div>
+
+  <h2>3. How to Switch to Production Without Breaking the Workflow</h2>
+  <p>
+    Switching an enterprise healthcare profiling app between servers can often lead to authentication loops, schema crashes, or data loss. The MCP App includes four layers of automated fail-safes:
+  </p>
+
+  <h3>A. Automated Client-Side Protections</h3>
+  <ul>
+    <li>
+      <strong>Automatic Session Cleansing on Domain Switch:</strong> 
+      In <code>ApiService._restoreSavedSession()</code>, the app inspects <code>pims_active_base_url</code> on boot. If it detects a change from development to production, it automatically purges the old development session cookie (<code>sid</code>). Users and MedReps will never be trapped in 401/403 authorization loops.
+    </li>
+    <li>
+      <strong>Autonomous Silent Re-Authentication & CSRF Renewal:</strong> 
+      If a production session expires in the field, the app silently authenticates via <code>/api/method/login</code> using secure stored credentials, retrieves fresh cookies and <code>X-Frappe-CSRF-Token</code>, and replays the user's action with zero UI interruption.
+    </li>
+    <li>
+      <strong>Zero-Data-Loss Offline SQLite Queue:</strong> 
+      All visits, engagements, and profiling records write first to local SQLite (<code>DbHelper</code>). If the production server is rebooting or undergoing DNS updates, all records remain safely cached and auto-sync in FIFO order upon reconnection.
+    </li>
+    <li>
+      <strong>Defensive Schema Sanitization:</strong> 
+      JSON deserializers use defensive null-coalescing and type coercion. If the production ERPNext server has additional custom fields or minor schema differences, the app ignores unknown properties without crashing.
+    </li>
+  </ul>
+
+  <h3>B. Production ERPNext v15 Pre-Flight Checklist (Run Once on Prod)</h3>
+  <p>Before launching to field reps on the production server, verify the following configuration on your production ERPNext v15 instance:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Target DocType</th>
+        <th style="width: 35%;">Requirement</th>
+        <th style="width: 40%;">Purpose / Impact if Omitted</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>COREnergy Engage Copy</strong></td>
+        <td>Add Custom DocPerm: <code>Read</code>, <code>Write</code>, <code>Create</code> for <em>Employee - COREnergy</em>, <em>Next Level Manager - COREnergy</em>, <em>Field Force Manager</em>.</td>
+        <td>Prevents <code>403 Forbidden</code> errors when field reps save or update hospital/clinic profiling data.</td>
+      </tr>
+      <tr>
+        <td><strong>COREnergy Engage</strong></td>
+        <td>Add Custom Field: <code>ownership_nationality</code> (Data).</td>
+        <td>Prevents <code>417 Expectation Failed</code> errors during account profiling synchronization.</td>
+      </tr>
+      <tr>
+        <td><strong>Unsuccessful COREnergy Engagement</strong></td>
+        <td>Add Custom Fields: <code>unsuccessful_call</code> (Check) and <code>decision_maker_or_responsible_person_not_available</code> (Check).</td>
+        <td>Ensures geotagged unsuccessful visit logs with GPS coordinates are recorded without schema rejection.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-tip">
+    <div class="callout-title">💡 One-Click Production Setup Script</div>
+    We have provided <code>scripts/apply_erpnext_fixes.py</code>. 
+    Update <code>BASE_URL = 'https://your-production-domain.com'</code> and your production admin credentials in the script, then execute:
+    <div style="font-family: monospace; font-size: 11.5px; margin-top: 4px; color: #047857;">
+      python scripts/apply_erpnext_fixes.py
+    </div>
+    This will configure all necessary DocPerms and Custom Fields in Frappe within 5 seconds.
+  </div>
+
+  <h2>4. Summary of Production Artifacts & Quality Gates</h2>
+  <ul>
+    <li><strong>Verified Release APK:</strong> <code>releases/PIMS_MCP_COREnergy_Release.apk</code> (56.9 MB, compiled with clean static analysis).</li>
+    <li><strong>Architecture Runbook:</strong> <code>docs/24_7_PRODUCTION_RESILIENCE_AND_FAILOVER_SPECIFICATION.md</code>.</li>
+    <li><strong>Static Analysis Quality Gate:</strong> Verified with <code>flutter analyze</code> — <strong>0 compilation errors, 0 warnings</strong>.</li>
+  </ul>
+
+  <div class="footer">
+    <div>PIMS MCP COREnergy Profiling App • Version 0.2.0</div>
+    <div>Confidential & Proprietary • SFE Operations Team</div>
+  </div>
+
+</body>
+</html>

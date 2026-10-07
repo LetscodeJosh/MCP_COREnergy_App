@@ -136,57 +136,84 @@ class _ListScreenState extends State<ListScreen> {
 
     final apiService = Provider.of<ApiService>(context, listen: false);
     try {
-      await apiService.checkOnlineStatus();
+      // Check online status first but don't block on it
+      await apiService.checkOnlineStatus().catchError((_) => false);
+      
+      // Fire-and-forget sync — do NOT block data loading on sync completion
       if (!apiService.isOffline) {
-        await apiService.syncOfflineData();
+        apiService.syncOfflineData().catchError((e) {
+          print('Background sync warning: $e');
+        });
       }
       final results = await Future.wait([
-        apiService.fetchEngagements(),
-        apiService.fetchInstitutions(),
-        apiService.fetchCOREnergyEngages(),
-        apiService.fetchPsgcLocations(),
+        apiService.fetchEngagements().catchError((e) {
+          print('Fetch engagements safe fallback error: $e');
+          return <Engagement>[];
+        }),
+        apiService.fetchInstitutions().catchError((e) {
+          print('Fetch institutions safe fallback error: $e');
+          return <Institution>[];
+        }),
+        apiService.fetchCOREnergyEngages().catchError((e) {
+          print('Fetch COREnergy engages safe fallback error: $e');
+          return <COREnergyEngage>[];
+        }),
+        apiService.fetchPsgcLocations().catchError((e) {
+          print('Fetch PSGC locations safe fallback error: $e');
+          return <PsgcLocation>[];
+        }),
       ]);
       final engagements = results[0] as List<Engagement>;
       final institutions = results[1] as List<Institution>;
       final COREnergyEngages = results[2] as List<COREnergyEngage>;
       final psgcLocations = results[3] as List<PsgcLocation>;
       
-      setState(() {
-        _allEngagements = engagements;
-        _allInstitutions = institutions;
-        _allEngageLogs = COREnergyEngages;
-        _allPsgcLocations = psgcLocations;
-        
-        // Extract unique sales reps
-        final reps = engagements
-            .map((e) => e.salesRep)
-            .where((rep) => rep != null && rep.isNotEmpty)
-            .map((rep) => rep!)
-            .toSet()
-            .toList();
-        
-        // Ensure default logins are in the filter list
-        for (var defaultRep in [
-          'jptan@profinsights.biz',
-          'mmperalta@pims-marketing.com',
-          'kmtaotao@pims-marketing.com'
-        ]) {
-          if (!reps.contains(defaultRep)) {
+      if (mounted) {
+        setState(() {
+          _allEngagements = engagements;
+          _allInstitutions = institutions;
+          _allEngageLogs = COREnergyEngages;
+          _allPsgcLocations = psgcLocations;
+          
+          // Extract unique sales reps from BOTH engagements and COREnergy Engage accounts
+          final reps = <String>{};
+          for (var e in engagements) {
+            if (e.salesRep != null && e.salesRep!.trim().isNotEmpty) {
+              reps.add(e.salesRep!.trim());
+            }
+          }
+          for (var c in COREnergyEngages) {
+            if (c.salesRep != null && c.salesRep!.trim().isNotEmpty) {
+              reps.add(c.salesRep!.trim());
+            }
+          }
+          for (var defaultRep in [
+            'jptan@profinsights.biz',
+            'mmperalta@pims-marketing.com',
+            'kmtaotao@pims-marketing.com'
+          ]) {
             reps.add(defaultRep);
           }
-        }
-        _salesReps = reps;
-        
-        _applyFilters();
-        _isLoading = false;
-      });
+          _salesReps = reps.toList()..sort();
+          
+          // If the logged in user has no records, show all records so the screen and map aren't blank
+          if (_selectedSalesRep != null &&
+              !_allEngagements.any((e) => e.salesRep == _selectedSalesRep) &&
+              !_allEngageLogs.any((c) => c.salesRep == _selectedSalesRep)) {
+            _selectedSalesRep = null;
+          }
+          
+          _applyFilters();
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error downloading ERPNext data: $e')),
-      );
+      print('Load data error handled gracefully: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -230,7 +257,8 @@ class _ListScreenState extends State<ListScreen> {
         final matchesProvince = _selectedProvince == null || item.province == _selectedProvince;
         final matchesCity = _selectedCity == null || item.cityMunicipality == _selectedCity;
 
-        return matchesSearch && matchesInstitution && matchesRegion && matchesProvince && matchesCity;
+        final matchesRep = _selectedSalesRep == null || item.salesRep == _selectedSalesRep;
+        return matchesSearch && matchesInstitution && matchesRegion && matchesProvince && matchesCity && matchesRep;
       }).toList();
 
       _currentPage = 1;
@@ -652,71 +680,75 @@ class _ListScreenState extends State<ListScreen> {
                   ? _buildListView()
                   : _buildMapView(),
           if (apiService.isSyncing)
-            Container(
-              color: Colors.black45,
-              child: Center(
-                child: Card(
-                  color: Colors.white,
-                  margin: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0056B3)),
+            Positioned(
+              top: 12,
+              left: 20,
+              right: 20,
+              child: Material(
+                elevation: 6,
+                borderRadius: BorderRadius.circular(24),
+                color: const Color(0xFF0056B3),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
-                        SizedBox(width: 16),
-                        Text(
-                          'Syncing offline data...',
-                          style: TextStyle(
-                            color: Color(0xFF1C1C1E),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        'Syncing offline data in background...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
         ],
       ),
-      floatingActionButton: _currentTabIndex == 0
-          ? FloatingActionButton(
-              backgroundColor: const Color(0xFF0056B3),
-              child: const Icon(Icons.add, color: Colors.white),
-              onPressed: () async {
-                if (_corenergySubTab == 1) {
-                  final result = await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => COREnergyEngageDetailScreen(
-                        institutions: _allInstitutions,
-                        salesReps: _salesReps,
-                        psgcLocations: _allPsgcLocations,
-                      ),
-                    ),
-                  );
-                  if (result == true) {
-                    _loadData();
-                  }
-                } else {
-                  final result = await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => DetailScreen(
-                        institutions: _allInstitutions,
-                        salesReps: _salesReps,
-                      ),
-                    ),
-                  );
-                  if (result == true) {
-                    _loadData();
-                  }
-                }
-              },
-            )
-          : null,
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF0056B3),
+        child: const Icon(Icons.add, color: Colors.white),
+        onPressed: () async {
+          if (_corenergySubTab == 1 && _currentTabIndex == 0) {
+            final result = await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => COREnergyEngageDetailScreen(
+                  institutions: _allInstitutions,
+                  salesReps: _salesReps,
+                  psgcLocations: _allPsgcLocations,
+                ),
+              ),
+            );
+            if (result == true) {
+              _loadData();
+            }
+          } else {
+            final result = await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => DetailScreen(
+                  institutions: _allInstitutions,
+                  salesReps: _salesReps,
+                ),
+              ),
+            );
+            if (result == true) {
+              _loadData();
+            }
+          }
+        },
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentTabIndex,
         onTap: (index) {
@@ -1549,27 +1581,40 @@ class _ListScreenState extends State<ListScreen> {
   }
 
   Widget _buildMapView() {
-    // Collect coordinates from engagements
+    // Collect coordinates from both engagements and COREnergy Engage accounts
     final points = <Marker>[];
     double latSum = 0;
     double lngSum = 0;
     int count = 0;
+    int succCount = 0;
+    int unsuccCount = 0;
+    int accountCount = 0;
 
-    for (var item in _filteredEngagements) {
+    // 1. Engagements: Filter strictly by selected MedRep if set, or include all if null ("All Reps")
+    final engagementsToPlot = _allEngagements.where((item) {
+      if (_selectedSalesRep != null && item.salesRep != _selectedSalesRep) return false;
+      return true;
+    }).toList();
+
+    for (var item in engagementsToPlot) {
       if (item.latitude != null && item.longitude != null) {
         final lat = double.tryParse(item.latitude!);
         final lng = double.tryParse(item.longitude!);
-        if (lat != null && lng != null) {
+        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
           latSum += lat;
           lngSum += lng;
           count++;
-
           final isUnsuccessful = item.unsuccessfulCall;
+          if (isUnsuccessful) {
+            unsuccCount++;
+          } else {
+            succCount++;
+          }
 
           points.add(
             Marker(
-              width: 40.0,
-              height: 40.0,
+              width: 44.0,
+              height: 44.0,
               point: LatLng(lat, lng),
               child: GestureDetector(
                 onTap: () {
@@ -1577,7 +1622,7 @@ class _ListScreenState extends State<ListScreen> {
                 },
                 child: Container(
                   decoration: BoxDecoration(
-                    color: isUnsuccessful ? const Color(0xFFFF453A) : const Color(0xFF0056B3),
+                    color: isUnsuccessful ? const Color(0xFFFF3B30) : const Color(0xFF007AFF),
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2.5),
                     boxShadow: const [
@@ -1587,6 +1632,62 @@ class _ListScreenState extends State<ListScreen> {
                         offset: Offset(0, 2),
                       ),
                     ],
+                  ),
+                  child: Icon(
+                    isUnsuccessful ? Icons.call_missed : Icons.verified,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+      }
+    }
+
+    // 2. COREnergy Engage Copy accounts: Filter strictly by selected MedRep if set, or include all if null
+    final engageLogsToPlot = _allEngageLogs.where((item) {
+      if (_selectedSalesRep != null && item.salesRep != _selectedSalesRep) return false;
+      return true;
+    }).toList();
+
+    for (var engage in engageLogsToPlot) {
+      if (engage.latitude != null && engage.longitude != null) {
+        final lat = double.tryParse(engage.latitude!);
+        final lng = double.tryParse(engage.longitude!);
+        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+          latSum += lat;
+          lngSum += lng;
+          count++;
+          accountCount++;
+
+          points.add(
+            Marker(
+              width: 44.0,
+              height: 44.0,
+              point: LatLng(lat, lng),
+              child: GestureDetector(
+                onTap: () {
+                  _showCOREnergyMapPinDetails(engage);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF34C759),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2.5),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.business,
+                    color: Colors.white,
+                    size: 22,
                   ),
                 ),
               ),
@@ -1598,7 +1699,7 @@ class _ListScreenState extends State<ListScreen> {
 
     final center = count > 0 
         ? LatLng(latSum / count, lngSum / count) 
-        : LatLng(14.3129, 121.1009); // Default to Canossa
+        : const LatLng(14.5995, 120.9842); // Default to NCR / Metro Manila
 
     return Stack(
       children: [
@@ -1610,8 +1711,10 @@ class _ListScreenState extends State<ListScreen> {
           ),
           children: [
             TileLayer(
-              urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-              subdomains: const ['a', 'b', 'c', 'd'],
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.pims.mcp_corenergy',
+              maxZoom: 19,
+              fallbackUrl: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
             ),
             MarkerLayer(
               markers: [
@@ -1645,6 +1748,131 @@ class _ListScreenState extends State<ListScreen> {
             ),
           ],
         ),
+
+        // Floating Interactive MedRep Filter & Live Stat Banner at top
+        Positioned(
+          top: 12,
+          left: 14,
+          right: 14,
+          child: Material(
+            elevation: 5,
+            borderRadius: BorderRadius.circular(16),
+            color: Colors.white.withOpacity(0.97),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Rep selector row
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0056B3).withOpacity(0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.person_pin_circle, color: Color(0xFF0056B3), size: 18),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _showMapMedRepPicker,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _selectedSalesRep == null ? 'All MedReps (Nationwide Coverage)' : 'MedRep: $_selectedSalesRep',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF1C1C1E),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const Text(
+                                      'Tap to switch MedRep or view all',
+                                      style: TextStyle(fontSize: 10, color: Color(0xFF8E8E93)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.arrow_drop_down, color: Color(0xFF0056B3)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_selectedSalesRep != null)
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedSalesRep = null;
+                              _applyFilters();
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE5E5EA),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'Show All',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0056B3)),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+
+                  // Counts breakdown row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(color: Color(0xFF007AFF), shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 4),
+                          Text('Succ ($succCount)', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1C1C1E))),
+                          const SizedBox(width: 8),
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(color: Color(0xFFFF3B30), shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 4),
+                          Text('Unsucc ($unsuccCount)', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1C1C1E))),
+                          if (accountCount > 0) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(color: Color(0xFF34C759), shape: BoxShape.circle),
+                            ),
+                            const SizedBox(width: 4),
+                            Text('Accts ($accountCount)', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1C1C1E))),
+                          ],
+                        ],
+                      ),
+                      Text('$count Geotagged', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0056B3))),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
         // Zoom controls on the right side
         Positioned(
           right: 16,
@@ -1673,6 +1901,7 @@ class _ListScreenState extends State<ListScreen> {
             ],
           ),
         ),
+
         // Go to current location FAB
         Positioned(
           right: 16,
@@ -1695,84 +1924,621 @@ class _ListScreenState extends State<ListScreen> {
     );
   }
 
-  void _showMapPinDetails(Engagement item) {
+  void _showMapMedRepPicker() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
-        final companyName = _getCompanyLabel(item.company);
+      builder: (ctx) {
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      item.name ?? '',
-                      style: const TextStyle(color: Color(0xFF1C1C1E), fontSize: 18, fontWeight: FontWeight.bold),
+                    const Text(
+                      'Filter Map by Sales Rep',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1C1C1E)),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: item.unsuccessfulCall
-                            ? const Color(0xFFFF453A).withOpacity(0.15)
-                            : const Color(0xFF30D158).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        item.unsuccessfulCall ? 'Unsuccessful' : 'Successful',
-                        style: TextStyle(
-                          color: item.unsuccessfulCall 
-                              ? const Color(0xFFFF453A) 
-                              : const Color(0xFF30D158),
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text('Institution: $companyName', style: const TextStyle(color: Color(0xFF1C1C1E), fontSize: 14)),
-                const SizedBox(height: 6),
-                Text('Sales Rep: ${item.salesRep ?? ''}', style: const TextStyle(color: Color(0xFF636366), fontSize: 14)),
-                if (item.latitude != null && item.longitude != null) ...[
-                  const SizedBox(height: 6),
-                  Text('Coords: ${item.latitude}, ${item.longitude}', style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 12)),
-                ],
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(); // dismiss sheet
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => DetailScreen(
-                          engagement: item,
-                          institutions: _allInstitutions,
-                          salesReps: _salesReps,
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.public, color: Color(0xFF0056B3)),
+                title: const Text('All Sales Reps (Nationwide)', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                  '${_allEngagements.length} calls • ${_allEngageLogs.length} accounts',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93)),
+                ),
+                trailing: _selectedSalesRep == null ? const Icon(Icons.check, color: Color(0xFF0056B3)) : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _selectedSalesRep = null;
+                    _applyFilters();
+                  });
+                },
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _salesReps.length,
+                  itemBuilder: (context, idx) {
+                    final rep = _salesReps[idx];
+                    final isSelected = _selectedSalesRep == rep;
+                    final repCalls = _allEngagements.where((e) => e.salesRep == rep).length;
+                    final repAccts = _allEngageLogs.where((c) => c.salesRep == rep).length;
+                    return ListTile(
+                      leading: Icon(Icons.person, color: isSelected ? const Color(0xFF0056B3) : const Color(0xFF8E8E93)),
+                      title: Text(
+                        rep,
+                        style: TextStyle(
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? const Color(0xFF0056B3) : const Color(0xFF1C1C1E),
                         ),
                       ),
-                    ).then((value) {
-                      if (value == true) {
-                        _loadData();
-                      }
-                    });
+                      subtitle: Text(
+                        '$repCalls calls • $repAccts accounts',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93)),
+                      ),
+                      trailing: isSelected ? const Icon(Icons.check, color: Color(0xFF0056B3)) : null,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        setState(() {
+                          _selectedSalesRep = rep;
+                          _applyFilters();
+                        });
+                      },
+                    );
                   },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0056B3),
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: const Text('View Profiling Details', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
-              ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCOREnergyMapPinDetails(COREnergyEngage item) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final institutionName = _resolveInstitutionName(item);
+        final locationText = [
+          if (item.cityMunicipality != null) item.cityMunicipality,
+          if (item.province != null) item.province,
+          if (item.region != null) item.region,
+        ].join(', ');
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD1D1D6),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          institutionName.isNotEmpty ? institutionName : item.name,
+                          style: const TextStyle(color: Color(0xFF1C1C1E), fontSize: 18, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF34C759).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF34C759), width: 1),
+                        ),
+                        child: const Text(
+                          'COREnergy Account',
+                          style: TextStyle(color: Color(0xFF1B6A2E), fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (locationText.isNotEmpty) ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, color: Color(0xFF8E8E93), size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(locationText, style: const TextStyle(color: Color(0xFF636366), fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                  Row(
+                    children: [
+                      const Icon(Icons.person_pin, color: Color(0xFF0056B3), size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Assigned Rep: ${item.salesRep ?? "Unassigned"}',
+                        style: const TextStyle(color: Color(0xFF1C1C1E), fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                  if (item.latitude != null && item.longitude != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.my_location, color: Color(0xFF34C759), size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Coords: ${item.latitude}, ${item.longitude} (${item.locationAccuracy ?? "Verified"})',
+                          style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 12, fontFamily: 'monospace'),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+
+                  // Work Activity Summary
+                  const Text('FIELD ACTIVITY & COVERAGE HISTORY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8E8E93))),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF2F2F7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${item.visits.length}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0056B3))),
+                              const Text('Visits Logged', style: TextStyle(fontSize: 11, color: Color(0xFF636366))),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF2F2F7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${item.contacts.length}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF34C759))),
+                              const Text('Key Contacts', style: TextStyle(fontSize: 11, color: Color(0xFF636366))),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF2F2F7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${item.actionItems.length}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFFF9500))),
+                              const Text('Action Items', style: TextStyle(fontSize: 11, color: Color(0xFF636366))),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Recent Visits breakdown
+                  if (item.visits.isNotEmpty) ...[
+                    const Text('RECENT VISITS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8E8E93))),
+                    const SizedBox(height: 6),
+                    ...item.visits.take(3).map((v) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: v.successfulCall ? const Color(0xFFE8F9ED) : const Color(0xFFFFEBEA),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              v.successfulCall ? Icons.check_circle : Icons.cancel,
+                              size: 16,
+                              color: v.successfulCall ? const Color(0xFF34C759) : const Color(0xFFFF3B30),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                v.successfulCall
+                                    ? 'Successful Visit: ${v.notes ?? "Call recorded"}'
+                                    : 'Unsuccessful Visit: ${v.reasonForUnsuccessfulCall ?? "Not available"}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: v.successfulCall ? const Color(0xFF1B6A2E) : const Color(0xFF901A1E),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Action Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0056B3),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.edit_note, color: Colors.white),
+                      label: const Text('View Account & Log Visit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        final result = await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => COREnergyEngageDetailScreen(
+                              engage: item,
+                              institutions: _allInstitutions,
+                              salesReps: _salesReps,
+                              psgcLocations: _allPsgcLocations,
+                            ),
+                          ),
+                        );
+                        if (result == true) {
+                          _loadData();
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showMapPinDetails(Engagement item) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final companyName = _getCompanyLabel(item.company);
+        final isUnsuccessful = item.unsuccessfulCall;
+        final contactFullName = [item.contact, item.lastName].where((s) => s != null && s.trim().isNotEmpty).join(' ');
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD1D1D6),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Header: Call Name & Status Badge
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.name ?? 'Engagement Call',
+                          style: const TextStyle(color: Color(0xFF1C1C1E), fontSize: 18, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: isUnsuccessful
+                              ? const Color(0xFFFF3B30).withOpacity(0.15)
+                              : const Color(0xFF34C759).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isUnsuccessful ? const Color(0xFFFF3B30) : const Color(0xFF34C759),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isUnsuccessful ? Icons.call_missed : Icons.verified,
+                              size: 14,
+                              color: isUnsuccessful ? const Color(0xFFFF3B30) : const Color(0xFF34C759),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isUnsuccessful ? 'Unsuccessful Call' : 'Successful Call',
+                              style: TextStyle(
+                                color: isUnsuccessful ? const Color(0xFFFF3B30) : const Color(0xFF1B6A2E),
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Sales Rep & Visit Time Info Card
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF2F2F7),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.person_pin, color: Color(0xFF0056B3), size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'MedRep: ${item.salesRep ?? "Unassigned"}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1C1C1E)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(Icons.access_time, color: Color(0xFF8E8E93), size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Time: ${item.dateAndTimeOfSalesAppointment ?? item.creation ?? "Not Recorded"}',
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF636366)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (item.latitude != null && item.longitude != null) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Icon(Icons.my_location, color: Color(0xFF34C759), size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'GPS: ${item.latitude}, ${item.longitude} (${item.locationAccuracy > 0 ? "±${item.locationAccuracy.toStringAsFixed(1)}m" : "Geotagged"})',
+                                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Color(0xFF1C1C1E)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Institution Covered
+                  const Text('INSTITUTION COVERED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8E8E93))),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.local_hospital, color: Color(0xFF0056B3), size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          companyName,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1C1C1E)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Work Done Section
+                  const Text('WORK DONE ON LOCATION', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8E8E93))),
+                  const SizedBox(height: 6),
+
+                  if (isUnsuccessful) ...[
+                    // Unsuccessful Call Reason Box
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF3B30).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFF3B30).withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.report_problem, size: 16, color: Color(0xFFFF3B30)),
+                              SizedBox(width: 6),
+                              Text('Reason for Unsuccessful Call:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFF3B30), fontSize: 13)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item.reasonForUnsuccessfulCall ?? 'No specific reason provided',
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF1C1C1E), fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    // Successful Call Work Details
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF34C759).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF34C759).withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF34C759)),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Sales appointment & product profiling completed successfully.',
+                              style: TextStyle(fontSize: 13, color: Color(0xFF1B6A2E), fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+
+                  // Contact Person & Role Met
+                  if (contactFullName.isNotEmpty || (item.positionOrRole != null && item.positionOrRole!.isNotEmpty)) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.badge, color: Color(0xFF8E8E93), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                contactFullName.isNotEmpty ? contactFullName : 'Contact Person',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1C1C1E)),
+                              ),
+                              if (item.positionOrRole != null && item.positionOrRole!.isNotEmpty)
+                                Text(
+                                  item.positionOrRole!,
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF636366)),
+                                ),
+                              if (item.contactNumber != null && item.contactNumber!.isNotEmpty)
+                                Text(
+                                  'Phone: ${item.contactNumber}',
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF636366)),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
+                  // Decision Maker Status
+                  Row(
+                    children: [
+                      Icon(
+                        item.decisionMakerOrResponsiblePersonNotAvailable ? Icons.cancel_outlined : Icons.check_circle_outline,
+                        color: item.decisionMakerOrResponsiblePersonNotAvailable ? const Color(0xFFFF9500) : const Color(0xFF34C759),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        item.decisionMakerOrResponsiblePersonNotAvailable
+                            ? 'Decision Maker was NOT available'
+                            : 'Decision Maker / Responsible Person was present',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: item.decisionMakerOrResponsiblePersonNotAvailable ? const Color(0xFF8A5300) : const Color(0xFF1B6A2E),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Action Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => DetailScreen(
+                              engagement: item,
+                              institutions: _allInstitutions,
+                              salesReps: _salesReps,
+                            ),
+                          ),
+                        ).then((value) {
+                          if (value == true) {
+                            _loadData();
+                          }
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0056B3),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.edit_note, color: Colors.white),
+                      label: const Text('View & Edit Call Details', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

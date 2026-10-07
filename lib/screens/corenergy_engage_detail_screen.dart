@@ -26,8 +26,13 @@ class COREnergyEngageDetailScreen extends StatefulWidget {
   State<COREnergyEngageDetailScreen> createState() => _COREnergyEngageDetailScreenState();
 }
 
-class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScreen> {
+class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScreen> with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+  
+  late TabController _tabController;
+  bool _isLocationVerified = false;
+  String? _locationAccuracy;
+  DateTime? _locationTimestamp;
   
   String? _selectedCompany; // Holds Institution Link ID (e.g. INST-00001)
   String? _selectedSalesRep;
@@ -146,6 +151,9 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
       _dynamicCities = _citiesList;
     }
     
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_handleTabSelection);
+
     if (widget.engage != null) {
       // Editing Mode
       _selectedCompany = widget.engage!.institutionName ?? widget.engage!.name;
@@ -163,6 +171,17 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
       _selectedSalesRep = widget.engage!.salesRep ?? apiService.loggedInEmail;
       _selectedOwnershipNationality = widget.engage!.ownershipNationality;
       
+      if (widget.engage!.latitude != null &&
+          widget.engage!.longitude != null &&
+          widget.engage!.latitude!.isNotEmpty &&
+          widget.engage!.longitude!.isNotEmpty &&
+          widget.engage!.latitude != '0.0' &&
+          widget.engage!.longitude != '0.0') {
+        _latitude = widget.engage!.latitude;
+        _longitude = widget.engage!.longitude;
+        _locationAccuracy = widget.engage!.locationAccuracy;
+      }
+
       // Load initial flat details from widget.engage
       _contactsList.addAll(widget.engage!.contacts);
       _visitsList.addAll(widget.engage!.visits);
@@ -174,6 +193,81 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
       // Creation Mode
       _selectedSalesRep = apiService.loggedInEmail ?? 'jptan@profinsights.biz';
     }
+  }
+
+  void _handleTabSelection() {
+    if (_tabController.indexIsChanging && _tabController.index > 0 && !_isLocationVerified) {
+      final targetIndex = _tabController.index;
+      _tabController.animateTo(0);
+      _showLocationRequiredDialog(targetIndex);
+    }
+  }
+
+  void _showLocationRequiredDialog([int? targetTab]) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.location_on, color: Color(0xFF0056B3), size: 26),
+            SizedBox(width: 8),
+            Text('Location Required', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'To ensure that you are covering this institution accurately on-site, you must get your current GPS location first before proceeding to Contacts, Engagements, or Action Items.',
+              style: TextStyle(fontSize: 14, height: 1.4, color: Color(0xFF3A3A3C)),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0056B3).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.verified, size: 16, color: Color(0xFF0056B3)),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Physical geotag verification ensures high coverage accuracy.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF0056B3), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF8E8E93))),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0056B3),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.my_location, size: 16, color: Colors.white),
+            label: const Text('Get Current Location', style: TextStyle(color: Colors.white)),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _fetchGPS();
+              if (_isLocationVerified && targetTab != null && mounted) {
+                _tabController.animateTo(targetTab);
+              }
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadFullDetails() async {
@@ -195,6 +289,16 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
         if (fullEngage.ownershipNationality != null && fullEngage.ownershipNationality!.isNotEmpty) {
           _selectedOwnershipNationality = fullEngage.ownershipNationality;
         }
+        if (fullEngage.latitude != null &&
+            fullEngage.longitude != null &&
+            fullEngage.latitude!.isNotEmpty &&
+            fullEngage.longitude!.isNotEmpty &&
+            fullEngage.latitude != '0.0' &&
+            fullEngage.longitude != '0.0') {
+          _latitude = fullEngage.latitude;
+          _longitude = fullEngage.longitude;
+          _locationAccuracy = fullEngage.locationAccuracy;
+        }
         _isLoadingDetails = false;
       });
     } catch (e) {
@@ -207,6 +311,8 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabSelection);
+    _tabController.dispose();
     _hospitalClinicController.dispose();
     _regionController.dispose();
     _provinceController.dispose();
@@ -238,6 +344,34 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
     });
 
     try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Location Services Disabled'),
+              content: const Text('Please enable GPS / Location Services on your device to verify coverage.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Geolocator.openLocationSettings();
+                  },
+                  child: const Text('Open Settings'),
+                ),
+              ],
+            ),
+          );
+        }
+        setState(() {
+          _isLocating = false;
+        });
+        return;
+      }
+
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -247,7 +381,7 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Location permission is denied in iPad Settings.'),
+              content: const Text('Location permission is required to verify institution coverage.'),
               backgroundColor: const Color(0xFFFF3B30),
               action: SnackBarAction(
                 label: 'Settings',
@@ -266,14 +400,51 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 8),
-      );
+      // 1. High-precision attempt
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.best,
+          timeLimit: const Duration(seconds: 12),
+        );
+      } catch (_) {
+        // Fallback to LocationAccuracy.high
+        try {
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 8),
+          );
+        } catch (_) {
+          position = await Geolocator.getLastKnownPosition();
+        }
+      }
+
+      if (position == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not acquire GPS fix. Please ensure you are outdoors or near a window and try again.'),
+              backgroundColor: Color(0xFFFF3B30),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        setState(() {
+          _isLocating = false;
+        });
+        return;
+      }
+
+      final latStr = position.latitude.toStringAsFixed(6);
+      final lngStr = position.longitude.toStringAsFixed(6);
+      final accuracyStr = '±${position.accuracy.toStringAsFixed(1)}m';
 
       setState(() {
-        _latitude = position.latitude.toStringAsFixed(6);
-        _longitude = position.longitude.toStringAsFixed(6);
+        _latitude = latStr;
+        _longitude = lngStr;
+        _locationAccuracy = accuracyStr;
+        _locationTimestamp = DateTime.now();
+        _isLocationVerified = true;
         _isLocating = false;
       });
 
@@ -282,37 +453,40 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
           final lat = double.tryParse(_latitude ?? '');
           final lng = double.tryParse(_longitude ?? '');
           if (lat != null && lng != null) {
-            _mapController.move(LatLng(lat, lng), 15.0);
+            _mapController.move(LatLng(lat, lng), 16.0);
           }
         } catch (_) {}
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('GPS coordinates saved successfully.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Current location verified ($accuracyStr). All tabs unlocked!'),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF34C759),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } catch (e) {
       setState(() {
-        // Fallback to random test coordinates
-        final offsetLat = (DateTime.now().millisecond / 1000 - 0.5) * 0.05;
-        final offsetLng = (DateTime.now().microsecond / 1000000 - 0.5) * 0.05;
-        _latitude = (14.3129 + offsetLat).toStringAsFixed(6);
-        _longitude = (121.1009 + offsetLng).toStringAsFixed(6);
         _isLocating = false;
       });
-
-      Future.delayed(const Duration(milliseconds: 100), () {
-        try {
-          final lat = double.tryParse(_latitude ?? '');
-          final lng = double.tryParse(_longitude ?? '');
-          if (lat != null && lng != null) {
-            _mapController.move(LatLng(lat, lng), 15.0);
-          }
-        } catch (_) {}
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('GPS failure ($e). Seeding mockup location.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('GPS error: $e. Please verify GPS is enabled.'),
+            backgroundColor: const Color(0xFFFF3B30),
+          ),
+        );
+      }
     }
   }
 
@@ -369,6 +543,9 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
       streetAddress: _streetAddressController.text.trim().isEmpty ? null : _streetAddressController.text.trim(),
       salesRep: _selectedSalesRep,
       ownershipNationality: _selectedOwnershipNationality,
+      latitude: _latitude,
+      longitude: _longitude,
+      locationAccuracy: _locationAccuracy,
       contacts: _contactsList,
       visits: _visitsList,
       actionItems: _actionItemsList,
@@ -469,77 +646,83 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 4,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF2F2F7),
-        appBar: AppBar(
-          title: Text(widget.engage != null ? 'Edit COREnergy Engage Copy' : 'New COREnergy Engage Copy'),
-          backgroundColor: const Color(0xFF0056B3),
-          foregroundColor: Colors.white,
-          elevation: 0,
-          actions: [
-            _isSaving
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16.0),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      ),
-                    ),
-                  )
-                : TextButton(
-                    onPressed: _saveForm,
-                    child: const Text(
-                      'Save',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF2F2F7),
+      appBar: AppBar(
+        title: Text(widget.engage != null ? 'Edit COREnergy Engage Copy' : 'New COREnergy Engage Copy'),
+        backgroundColor: const Color(0xFF0056B3),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          _isSaving
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     ),
                   ),
+                )
+              : TextButton(
+                  onPressed: _saveForm,
+                  child: const Text(
+                    'Save',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          onTap: (index) {
+            if (index > 0 && !_isLocationVerified) {
+              _tabController.animateTo(0);
+              _showLocationRequiredDialog(index);
+            }
+          },
+          isScrollable: false,
+          indicatorColor: Colors.white,
+          indicatorWeight: 3.5,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white.withOpacity(0.7),
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+          tabs: [
+            const Tab(
+              icon: Icon(Icons.info_outline, size: 18),
+              text: 'Details',
+            ),
+            Tab(
+              icon: Icon(_isLocationVerified ? Icons.contacts_outlined : Icons.lock_outline, size: 18),
+              text: 'Contacts',
+            ),
+            Tab(
+              icon: Icon(_isLocationVerified ? Icons.handshake_outlined : Icons.lock_outline, size: 18),
+              text: 'Engagements',
+            ),
+            Tab(
+              icon: Icon(_isLocationVerified ? Icons.assignment_outlined : Icons.lock_outline, size: 18),
+              text: 'Action Items',
+            ),
           ],
-          bottom: TabBar(
-            isScrollable: false,
-            indicatorColor: Colors.white,
-            indicatorWeight: 3.5,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white.withOpacity(0.7),
-            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-            tabs: const [
-              Tab(
-                icon: Icon(Icons.info_outline, size: 18),
-                text: 'Details',
-              ),
-              Tab(
-                icon: Icon(Icons.contacts_outlined, size: 18),
-                text: 'Contacts',
-              ),
-              Tab(
-                icon: Icon(Icons.handshake_outlined, size: 18),
-                text: 'Engagements',
-              ),
-              Tab(
-                icon: Icon(Icons.assignment_outlined, size: 18),
-                text: 'Action Items',
-              ),
-            ],
-          ),
         ),
-        body: Form(
-          key: _formKey,
-          child: TabBarView(
-            children: [
-              _buildDetailsTab(),
-              _buildContactsTab(),
-              _buildEngagementsTab(),
-              _buildActionItemsTab(),
-            ],
-          ),
+      ),
+      body: Form(
+        key: _formKey,
+        child: TabBarView(
+          controller: _tabController,
+          physics: _isLocationVerified ? const AlwaysScrollableScrollPhysics() : const NeverScrollableScrollPhysics(),
+          children: [
+            _buildDetailsTab(),
+            _buildContactsTab(),
+            _buildEngagementsTab(),
+            _buildActionItemsTab(),
+          ],
         ),
       ),
     );
@@ -551,6 +734,72 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        // Location verification warning or verified badge banner
+        if (!_isLocationVerified)
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFFFCC00), width: 1.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9500), size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Coverage Verification Required',
+                        style: TextStyle(color: Color(0xFF8A5300), fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'You must get current location first before proceeding in the other 3 tabs (Contacts, Engagements, Action Items) to verify accurate coverage.',
+                        style: TextStyle(color: Color(0xFF8A5300), fontSize: 12, height: 1.3),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F9ED),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF34C759), width: 1.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.verified_rounded, color: Color(0xFF34C759), size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'On-Site Coverage Verified ($_locationAccuracy)',
+                        style: const TextStyle(color: Color(0xFF1B6A2E), fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'GPS: $_latitude, $_longitude • All tabs unlocked for reporting',
+                        style: const TextStyle(color: Color(0xFF28793C), fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
         // Header card
         Container(
           padding: const EdgeInsets.all(20),
@@ -818,22 +1067,28 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
         ),
         const SizedBox(height: 24),
 
-        OutlinedButton.icon(
+        ElevatedButton.icon(
           onPressed: _isLocating ? null : _fetchGPS,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF0056B3),
-            side: const BorderSide(color: Color(0xFFD1D1D6)),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _isLocationVerified ? const Color(0xFF34C759) : const Color(0xFF0056B3),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 1,
           ),
           icon: _isLocating
               ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0056B3)),
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
-              : const Icon(Icons.location_on_outlined, color: Color(0xFF0056B3), size: 18),
-          label: Text(_isLocating ? 'Fetching GPS...' : 'Get Current Location'),
+              : Icon(_isLocationVerified ? Icons.check_circle : Icons.my_location, size: 20),
+          label: Text(
+            _isLocating
+                ? 'Acquiring High-Precision GPS...'
+                : (_isLocationVerified ? 'Re-verify Current Location ($_locationAccuracy)' : 'Get Current Location (Required to unlock tabs)'),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
         ),
         if (_latitude != null && _longitude != null) ...[
           const SizedBox(height: 8),
@@ -844,10 +1099,35 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: const Color(0xFFD1D1D6)),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: Text('Lat: $_latitude', style: const TextStyle(color: Color(0xFF1C1C1E), fontFamily: 'monospace', fontSize: 13))),
-                Expanded(child: Text('Lng: $_longitude', style: const TextStyle(color: Color(0xFF1C1C1E), fontFamily: 'monospace', fontSize: 13))),
+                Row(
+                  children: [
+                    Expanded(child: Text('Lat: $_latitude', style: const TextStyle(color: Color(0xFF1C1C1E), fontFamily: 'monospace', fontSize: 13))),
+                    Expanded(child: Text('Lng: $_longitude', style: const TextStyle(color: Color(0xFF1C1C1E), fontFamily: 'monospace', fontSize: 13))),
+                  ],
+                ),
+                if (_locationAccuracy != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.gps_fixed, size: 14, color: Color(0xFF34C759)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Accuracy: $_locationAccuracy',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF34C759)),
+                      ),
+                      if (_locationTimestamp != null) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          '• Verified at ${_locationTimestamp!.hour.toString().padLeft(2, '0')}:${_locationTimestamp!.minute.toString().padLeft(2, '0')}',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF8E8E93)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -871,7 +1151,10 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
                 ),
                 children: [
                   TileLayer(
-                    urlTemplate: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.pims.mcp_corenergy',
+                    maxZoom: 19,
+                    fallbackUrl: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
                   ),
                   MarkerLayer(
                     markers: [
@@ -900,7 +1183,69 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
     );
   }
 
+  Widget _buildLocationLockedView(String tabName) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF9500).withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.location_off_rounded, size: 52, color: Color(0xFFFF9500)),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'On-Site Verification Required',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1C1C1E)),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'To ensure that you are covering this institution accurately, you must get your current GPS location before managing $tabName.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, color: Color(0xFF636366), height: 1.4),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _isLocating ? null : () async {
+                await _fetchGPS();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0056B3),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 2,
+              ),
+              icon: _isLocating
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.my_location, size: 20),
+              label: Text(
+                _isLocating ? 'Acquiring High-Precision GPS...' : 'Get Current Location Now',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextButton(
+              onPressed: () {
+                _tabController.animateTo(0);
+              },
+              child: const Text('Back to Institution Details', style: TextStyle(color: Color(0xFF0056B3))),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildContactsTab() {
+    if (!_isLocationVerified) {
+      return _buildLocationLockedView('Contacts');
+    }
     return Column(
       children: [
         Padding(
@@ -1002,6 +1347,9 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
   }
 
   Widget _buildEngagementsTab() {
+    if (!_isLocationVerified) {
+      return _buildLocationLockedView('Engagements / Visits');
+    }
     return Column(
       children: [
         Padding(
@@ -1150,6 +1498,9 @@ class _COREnergyEngageDetailScreenState extends State<COREnergyEngageDetailScree
   }
 
   Widget _buildActionItemsTab() {
+    if (!_isLocationVerified) {
+      return _buildLocationLockedView('Action Items');
+    }
     return Column(
       children: [
         Padding(

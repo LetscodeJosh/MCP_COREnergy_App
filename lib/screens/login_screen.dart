@@ -345,7 +345,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 )
                               : const Text(
-                                  'Login to Environment',
+                                  'Login',
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
@@ -359,7 +359,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: _isLoading ? null : _handleBiometricLogin,
                             icon: const Icon(Icons.fingerprint, size: 22, color: Color(0xFF0056B3)),
                             label: const Text(
-                              'Log in with Face ID / Touch ID',
+                              'Biometric Login',
                               style: TextStyle(
                                 color: Color(0xFF0056B3),
                                 fontSize: 14,

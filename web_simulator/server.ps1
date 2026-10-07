@@ -45,7 +45,7 @@ while ($running) {
                 
                 # Sanitize path to prevent folder traversal
                 $sanitizedPath = $urlPath.Replace("..", "").TrimStart('/')
-                $filePath = Join-Path "c:\Users\User 1\Downloads\MCP_Test\MCP_Test_Repo" $sanitizedPath
+                $filePath = Join-Path $PSScriptRoot $sanitizedPath
                 
                 if (Test-Path $filePath -PathType Leaf) {
                     $bytes = [System.IO.File]::ReadAllBytes($filePath)

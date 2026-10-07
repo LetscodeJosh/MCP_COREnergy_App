@@ -111,6 +111,9 @@ class COREnergyEngage {
   final String? leadsSource;
   final String? leadsStatus;
   final String? ownershipNationality;
+  final String? latitude;
+  final String? longitude;
+  final String? locationAccuracy;
   final String? creation;
   final String? modified;
 
@@ -132,6 +135,9 @@ class COREnergyEngage {
     this.leadsSource,
     this.leadsStatus,
     this.ownershipNationality,
+    this.latitude,
+    this.longitude,
+    this.locationAccuracy,
     this.creation,
     this.modified,
     this.contacts = const [],
@@ -175,6 +181,9 @@ class COREnergyEngage {
       leadsSource: json['leads_source'],
       leadsStatus: json['leads_status'],
       ownershipNationality: json['ownership_nationality'],
+      latitude: json['latitude']?.toString(),
+      longitude: json['longitude']?.toString(),
+      locationAccuracy: json['location_accuracy']?.toString(),
       creation: json['creation'],
       modified: json['modified'],
       contacts: parsedContacts,
@@ -202,6 +211,9 @@ class COREnergyEngage {
       if (leadsSource != null) 'leads_source': leadsSource,
       if (leadsStatus != null) 'leads_status': leadsStatus,
       if (ownershipNationality != null) 'ownership_nationality': ownershipNationality,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (locationAccuracy != null) 'location_accuracy': locationAccuracy,
       // Serialize child tables to multiple common naming keys for safety
       'table_ugpp': contacts.map((c) => c.toJson()).toList(),
       'contacts': contacts.map((c) => c.toJson()).toList(),

@@ -1,6 +1,6 @@
 name: mcp_profiling
 description: A Flutter test environment app for MCP Test (HCP Profiling) interfacing with ERPNext v15.
-version: 1.0.0+1
+version: 0.2.4+5
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -12,6 +12,7 @@ dependencies:
   cupertino_icons: ^1.0.5
   http: ^1.1.0
   provider: ^6.0.5
+
   intl: ^0.18.1
   geolocator: ^10.1.0
   image_picker: ^1.0.4
@@ -32,10 +33,13 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "icon-512.png"
+  image_path: "assets/icon-512.png"
 
 flutter:
   uses-material-design: true
   assets:
     - assets/medical_bg.jpg
     - assets/institutions.json
+    - assets/engagements.json
+    - assets/app_icon.png
+    - assets/icon-512.png

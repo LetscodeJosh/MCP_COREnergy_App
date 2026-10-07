@@ -17,14 +17,14 @@
     <!-- Left Instructions Panel -->
     <div class="info-panel">
         <span class="info-badge">MCP Test Environment</span>
-        <h1>HCP Profiling Web App</h1>
+        <h1>MCP Profiling Web App</h1>
         <p>This interactive preview simulates a mobile device running the Flutter application. It runs directly in the browser and connects with the live ERPNext API.</p>
         
         <div class="credential-box">
             <h3>🔑 API Test Credentials</h3>
             <div style="margin-top: 10px;"><strong>Host:</strong> dev.pmii-marketing.com</div>
-            <div><strong>User:</strong> jptan@profinsights.biz</div>
-            <div><strong>Password:</strong> UEPCS101c!</div>
+            <div><strong>User:</strong> jptan@profinsights.biz (or kmtaotao@pims-marketing.com)</div>
+            <div><strong>Password:</strong> pims@admin</div>
         </div>
 
         <p><strong>Note:</strong> Due to web browser security (CORS), requests to the live ERPNext server may be blocked in a local environment. Switch the bypass toggle below to use the built-in mock database representing real ERPNext records.</p>
@@ -145,12 +145,14 @@
                         <label>Reason for Unsuccessful Call</label>
                         <select id="reason_for_unsuccessful_call" class="input-control">
                             <option value="">Select Reason...</option>
-                            <option value="Company moved to different address">Company moved to different address</option>
                             <option value="Prior appointment or letter needed">Prior appointment or letter needed</option>
-                            <option value="Decision maker not available">Decision maker not available</option>
-                            <option value="Closed / No longer in operations">Closed / No longer in operations</option>
-                            <option value="Refused to entertain">Refused to entertain</option>
-                            <option value="Other">Other Reason</option>
+                            <option value="Contact not available">Contact not available</option>
+                            <option value="Company no longer operational">Company no longer operational</option>
+                            <option value="Company moved to different address">Company moved to different address</option>
+                            <option value="Call - Invalid or Cannot be reached">Call - Invalid or Cannot be reached</option>
+                            <option value="Call - Wrong number">Call - Wrong number</option>
+                            <option value="Call - 3 Attempt, no answer">Call - 3 Attempt, no answer</option>
+                            <option value="Call - Declined or Rejected">Call - Declined or Rejected</option>
                         </select>
                     </div>
 

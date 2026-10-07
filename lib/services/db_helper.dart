@@ -84,12 +84,16 @@ class DbHelper {
   }
 
   static Future<void> insertPendingEngagement(COREnergyEngage engage, String actionType) async {
-    final db = await database;
     final dataString = jsonEncode(engage.toJson());
+    await insertPendingRaw(engage.name, dataString, actionType);
+  }
+
+  static Future<void> insertPendingRaw(String tempId, String dataString, String actionType) async {
+    final db = await database;
     await db.insert(
       'pending_engagements',
       {
-        'temp_id': engage.name,
+        'temp_id': tempId,
         'data': dataString,
         'action_type': actionType,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -157,6 +161,23 @@ class DbHelper {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  static Future<void> saveCachedEngagementsBatch(List<COREnergyEngage> engages) async {
+    final db = await database;
+    final batch = db.batch();
+    for (var engage in engages) {
+      batch.insert(
+        'cached_engagements',
+        {
+          'name': engage.name,
+          'data': jsonEncode(engage.toJson()),
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   static Future<List<COREnergyEngage>> getCachedEngagements() async {
