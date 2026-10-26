@@ -2,6 +2,12 @@
 
 All notable changes to the MCP Profiling & COREnergy App project are documented in this file.
 
+## [0.2.5] - 2026-10-26
+
+### Fixed & Improved
+- **iOS Deployment Readiness & Minimum Target Platform**: Configured minimum deployment target platform to `13.0` in `ios/Podfile`, ensuring modern Flutter and CocoaPods plugin compatibility with Xcode 15/16.
+- **iOS Permission Descriptions & Photo Library Access**: Added `NSPhotoLibraryUsageDescription` for visit photo uploads and updated `NSLocationWhenInUseUsageDescription` and `NSCameraUsageDescription` strings in `ios/Runner/Info.plist` to explicitly identify PIMS MCP-COREnergy.
+
 ## [0.2.4] - 2026-10-01
 
 ### Added & Improved

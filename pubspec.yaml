@@ -1,6 +1,6 @@
 name: mcp_profiling
 description: A Flutter test environment app for MCP Test (HCP Profiling) interfacing with ERPNext v15.
-version: 0.2.4+5
+version: 0.2.5+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

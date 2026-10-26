@@ -25,9 +25,11 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>PIMS HCP needs location access to geotag profiling records.</string>
+	<string>PIMS MCP needs location access to geotag profiling and engagement records.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>PIMS HCP needs camera access to capture geotagged photos.</string>
+	<string>PIMS MCP needs camera access to capture geotagged photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>PIMS MCP requires photo library access to select and upload engagement photos.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>PIMS MCP requires Face ID access for quick and secure biometric login.</string>
 	<key>LSRequiresIPhoneOS</key>
