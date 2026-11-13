@@ -1,4 +1,4 @@
-# mcp_profiling
+# MCP COREnergy App
 
 A new Flutter project.
 
